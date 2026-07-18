@@ -19,7 +19,8 @@ flowchart LR
     subgraph API["API REST (FastAPI)"]
         direction TB
         ROUTES["/earthquakes /metrics /reports"]
-        DASH["Dashboard web"]
+        WS["WebSocket /ws + vigilante"]
+        DASH["Dashboard web (EN VIVO)"]
         CACHE["TTLCache"]
     end
 
@@ -39,6 +40,8 @@ flowchart LR
     ROUTES -->|read| C1 & C2 & C3
     CACHE -.-> ROUTES
     DASH --> ROUTES
+    WS -->|observa| C1
+    WS -.->|push en vivo| DASH
     DAG -->|read| C1
     DAG -->|upsert| C3
 ```
@@ -52,9 +55,13 @@ flowchart LR
    las métricas de las ventanas horarias afectadas y se guardan en `metrics`.
 3. **API REST**: expone consultas con filtros, paginación y ordenamiento; el
    resumen global se sirve desde una caché TTL.
-4. **Airflow** (cada hora): consolida los eventos de la hora en un reporte y lo
+4. **Tiempo real (WebSocket)**: un vigilante en el API observa la colección
+   `earthquakes` y empuja los eventos nuevos por `/ws` a los navegadores
+   conectados.
+5. **Airflow** (cada hora): consolida los eventos de la hora en un reporte y lo
    persiste en `hourly_reports`.
-5. **Dashboard**: interfaz web que consume la API y se actualiza cada 30 s.
+6. **Dashboard**: interfaz web que se suscribe al WebSocket y se actualiza sola
+   en vivo (con refresco de respaldo cada 30 s si el WebSocket se cae).
 
 ## Decisiones de modelado de datos (MongoDB)
 

@@ -1,6 +1,9 @@
 # ---- API & Ingesta (servicio principal) ----
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
+# WebSocket para actualización en tiempo real (incluido en uvicorn[standard],
+# se fija explícito para dejar clara la dependencia)
+websockets==14.1
 
 # MongoDB (driver asíncrono + sync para utilidades)
 motor==3.6.0

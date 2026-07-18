@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     # ---- Caché ----
     cache_ttl_seconds: int = 30
 
+    # ---- Tiempo real (WebSocket) ----
+    # Cada cuántos segundos el API observa la BD para detectar eventos nuevos
+    # y empujarlos a los clientes conectados por WebSocket.
+    realtime_poll_seconds: int = 5
+
     # ---- API ----
     api_host: str = "0.0.0.0"
     api_port: int = 8000

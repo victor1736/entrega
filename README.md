@@ -224,6 +224,7 @@ Base URL: `http://localhost:8000`. Se incluye la colección
 | GET | `/metrics/{window}` | Métrica de una ventana concreta |
 | GET | `/reports` | Reportes horarios consolidados |
 | POST | `/reports/generate/{window}` | Genera/regenera un reporte bajo demanda |
+| WS | `/ws` | Canal WebSocket: empuja los eventos nuevos en tiempo real |
 
 ### Parámetros de `/earthquakes`
 
@@ -259,15 +260,66 @@ agregaciones por ventana temporal, resueltas eficientemente con el
 *aggregation pipeline* e índices compuestos. No hay relaciones que justifiquen
 un modelo relacional.
 
-## Procesamiento en tiempo real
+## Funcionamiento en tiempo real (se actualiza solo)
 
-Cada evento nuevo dispara el recálculo de las métricas de su ventana horaria:
+El sistema **se actualiza por sí mismo**: cuando ocurre un sismo, aparece en el
+dashboard sin recargar ni intervención manual. Esto se logra con tres capas
+encadenadas:
+
+```
+USGS ──(1) cada 3 min──> Ingesta ──> MongoDB ──(2) al instante──> Métricas
+                                          │
+                                          └──(3) push WebSocket──> Dashboard (se redibuja solo)
+```
+
+**1. Ingesta automática (cada 3 minutos).** El worker `src/ingestion_main.py`
+consulta el feed de USGS cada `INGESTION_INTERVAL_SECONDS` (180 s por defecto),
+detecta los eventos nuevos, evita duplicados y los guarda en MongoDB. Así, un
+sismo publicado por USGS entra al sistema en ≤ 3 min.
+
+**2. Procesamiento en tiempo real (inmediato).** En el mismo ciclo, apenas se
+insertan eventos nuevos, `ProcessingService` recalcula al instante las métricas
+de las ventanas horarias afectadas:
 
 - Cantidad de sismos por hora.
 - Magnitud promedio, máxima y mínima.
 - **Distribución por rangos de magnitud** (clasificación tipo Richter):
   `micro` (<2), `minor` (2–4), `light` (4–5), `moderate` (5–6), `strong` (6–7),
   `major` (7–8), `great` (≥8).
+
+**3. Push por WebSocket (Bono Nivel 3).** El API mantiene un **vigilante**
+(`src/api/realtime.py`) que observa la colección `earthquakes` y, en cuanto
+detecta eventos nuevos, los **empuja** por WebSocket (`/ws`) a todos los
+navegadores conectados. El dashboard se suscribe a `/ws`, muestra el indicador
+**🔴 EN VIVO**, lanza una notificación *"Nuevo sismo · M… ubicación"* y redibuja
+KPIs, feed y gráficos **al instante**, sin recargar.
+
+> **Respaldo:** si el WebSocket se cae, el dashboard vuelve automáticamente a un
+> refresco por intervalo (cada 30 s) y reintenta reconectar. Nunca se queda
+> estático.
+
+### Parámetros configurables
+
+| Variable / archivo | Por defecto | Efecto |
+|--------------------|-------------|--------|
+| `INGESTION_INTERVAL_SECONDS` (`.env`) | `180` | Cada cuánto se consulta USGS. |
+| `REALTIME_POLL_SECONDS` (`.env`) | `5` | Cada cuánto el API busca eventos nuevos para empujar por WebSocket. |
+| `REFRESH_MS` (`src/static/app.js`) | `30000` | Refresco de respaldo si el WebSocket no está disponible. |
+
+### Cómo verlo funcionando en vivo
+
+1. Arranca la plataforma (`docker compose up`) **o**, en local, la API + el
+   worker de ingesta (ver [Ejecución local](#ejecución-local-sin-docker-servidor-de-desarrollo)).
+2. Abre el dashboard en <http://localhost:8000>. Verás el indicador **🔴 EN VIVO**.
+3. Cuando entren sismos nuevos (USGS suele publicar varios por hora), el feed,
+   los KPIs y los gráficos se actualizarán solos y aparecerá la notificación.
+   Para forzar actividad de prueba puedes bajar `INGESTION_INTERVAL_SECONDS`.
+
+> **Escalabilidad:** el vigilante actual sondea la BD para mantener el
+> despliegue simple (una sola MongoDB, sin infraestructura extra). En un
+> escenario de alto volumen se sustituiría por *MongoDB Change Streams* o un bus
+> de eventos (Kafka/RabbitMQ) **sin cambiar el contrato del WebSocket** ni el
+> dashboard, gracias al diseño desacoplado.
 
 ## Airflow
 
@@ -380,7 +432,8 @@ DAG `hourly_seismic_report`. También puedes generar un reporte al instante con
 
 | Archivo | Qué hace |
 |---------|----------|
-| `main.py` | Crea la app FastAPI, gestiona el ciclo de vida (conexión + índices + caché), registra los routers y **sirve el dashboard**. |
+| `main.py` | Crea la app FastAPI, gestiona el ciclo de vida (conexión + índices + caché + vigilante de tiempo real), registra los routers, el WebSocket y **sirve el dashboard**. |
+| `realtime.py` | **Tiempo real (WebSocket)**: gestor de conexiones y vigilante que empuja los eventos nuevos a los clientes conectados. |
 | `dependencies.py` | Inyección de dependencias: ensambla repositorios y servicios a partir de la conexión a la BD. |
 | `schemas.py` | Esquemas Pydantic de request/response: enums de ordenamiento, paginación genérica y modelos de salida. |
 | `routes/earthquakes.py` | `GET /earthquakes` con filtros (magnitud, tiempo, ubicación, ventana), paginación y ordenamiento. |
@@ -392,9 +445,9 @@ DAG `hourly_seismic_report`. También puedes generar un reporte al instante con
 
 | Archivo | Qué hace |
 |---------|----------|
-| `index.html` | Estructura del dashboard: KPIs, gráficos y tablas. |
-| `styles.css` | Estilos (tema oscuro, fondo animado, tarjetas *glass*, responsive). |
-| `app.js` | Consume la API, pinta los KPIs, gráficos (Chart.js) y tablas, y **auto-refresca cada 30 s**. |
+| `index.html` | Estructura del dashboard estilo *feed*: navbar, tarjeta de perfil con KPIs, feed de eventos, panel de reportes y gráficos. |
+| `styles.css` | Estilos (tema claro tipo LinkedIn, layout de 3 columnas, tipografías Sora/Inter/JetBrains Mono, responsive). |
+| `app.js` | Consume la API, se **suscribe al WebSocket** para actualizar en vivo (indicador EN VIVO + notificación), pinta KPIs, gráficos (Chart.js) y feed; incluye buscador, filtros y paginación. |
 
 ### `src/utils/` — Utilidades
 
@@ -428,6 +481,8 @@ código.** Las principales:
 - **Nivel 1**: Pydantic v2 (modelos y validación de parámetros), logging
   estructurado en JSON, modularización y principios SOLID, gestión eficiente de
   conexiones (pool Motor singleton) y estrategia de caché (TTL en memoria).
-- **Base para Nivel 3/4**: arquitectura orientada a eventos y separación clara
-  entre ingesta, procesamiento y reportería, lista para incorporar colas
-  (Kafka/RabbitMQ) o WebSockets sin reescribir el núcleo.
+- **Nivel 3**: **WebSockets para actualización en tiempo real** — el dashboard
+  recibe los eventos nuevos por *push* y se actualiza solo (ver
+  [Funcionamiento en tiempo real](#funcionamiento-en-tiempo-real-se-actualiza-solo)).
+  El diseño orientado a eventos queda listo para incorporar Kafka/RabbitMQ o
+  MongoDB Change Streams sin reescribir el núcleo.

@@ -158,8 +158,45 @@ async function loadReports() {
 async function refreshAll() {
   try {
     await Promise.all([loadSummary(), loadFeed(true), loadDistribution(), loadHourly(), loadReports()]);
-    setStatus(true);
+    if (!wsConnected) setStatus(true);
   } catch (e) { console.error(e); setStatus(false); }
+}
+
+// ---------- Tiempo real (WebSocket push) ----------
+let ws = null, wsConnected = false;
+
+function setLive(on) {
+  wsConnected = on;
+  const badge = $("liveBadge");
+  $("statusDot").className = "dot " + (on ? "live" : "ok");
+  $("statusText").textContent = on ? "EN VIVO" : "En línea";
+  badge.classList.toggle("is-live", on);
+}
+
+function showToast(msg) {
+  const t = $("toast");
+  const e = msg.latest || {};
+  const mag = e.magnitude != null ? e.magnitude.toFixed(1) : "—";
+  t.innerHTML = `<span class="toast-dot"></span> Nuevo sismo · <b>M${mag}</b> ${e.location ?? ""}`;
+  t.classList.add("show");
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => t.classList.remove("show"), 5000);
+}
+
+function connectWS() {
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+  ws.onopen = () => setLive(true);
+  ws.onclose = () => { setLive(false); setStatus(true); setTimeout(connectWS, 3000); };
+  ws.onerror = () => ws.close();
+  ws.onmessage = (ev) => {
+    let msg; try { msg = JSON.parse(ev.data); } catch { return; }
+    if (msg.type === "update") {
+      showToast(msg);
+      loadSummary(); loadDistribution(); loadHourly(); loadReports();
+      if (state.page === 1) loadFeed(true);
+    }
+  };
 }
 
 // Eventos UI
@@ -177,4 +214,10 @@ $("searchInput").addEventListener("input", (e) => {
 });
 
 refreshAll();
-setInterval(() => { loadSummary(); loadDistribution(); loadHourly(); loadReports(); if (state.page === 1) loadFeed(true); }, REFRESH_MS);
+connectWS();
+// Respaldo: si el WebSocket se cae, seguimos refrescando por intervalo.
+setInterval(() => {
+  if (wsConnected) return; // en vivo: el push manda; no hace falta sondear
+  loadSummary(); loadDistribution(); loadHourly(); loadReports();
+  if (state.page === 1) loadFeed(true);
+}, REFRESH_MS);
