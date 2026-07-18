@@ -1,0 +1,97 @@
+{
+  "info": {
+    "name": "Seismic Platform API",
+    "description": "Colección de la API REST de la plataforma de eventos sísmicos en tiempo real (USGS + MongoDB + FastAPI + Airflow).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8000" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{base_url}}/health", "host": ["{{base_url}}"], "path": ["health"] }
+      }
+    },
+    {
+      "name": "Earthquakes - listar (filtros/paginación/orden)",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{base_url}}/earthquakes?page=1&page_size=20&sort_by=event_time&sort_dir=desc&min_magnitude=2.5",
+          "host": ["{{base_url}}"],
+          "path": ["earthquakes"],
+          "query": [
+            { "key": "page", "value": "1" },
+            { "key": "page_size", "value": "20" },
+            { "key": "sort_by", "value": "event_time", "description": "event_time | magnitude | ingested_at" },
+            { "key": "sort_dir", "value": "desc", "description": "asc | desc" },
+            { "key": "min_magnitude", "value": "2.5" },
+            { "key": "max_magnitude", "value": "9", "disabled": true },
+            { "key": "location", "value": "California", "disabled": true },
+            { "key": "start_time", "value": "2026-06-17T00:00:00Z", "disabled": true },
+            { "key": "end_time", "value": "2026-06-18T00:00:00Z", "disabled": true },
+            { "key": "window", "value": "2026-06-17T10", "disabled": true }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Metrics - listar por ventana",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{base_url}}/metrics?page=1&page_size=24",
+          "host": ["{{base_url}}"],
+          "path": ["metrics"],
+          "query": [
+            { "key": "page", "value": "1" },
+            { "key": "page_size", "value": "24" },
+            { "key": "window_from", "value": "2026-06-17T00", "disabled": true },
+            { "key": "window_to", "value": "2026-06-17T23", "disabled": true }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Metrics - resumen global (cacheado)",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{base_url}}/metrics/summary", "host": ["{{base_url}}"], "path": ["metrics", "summary"] }
+      }
+    },
+    {
+      "name": "Metrics - por ventana",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{base_url}}/metrics/2026-06-17T10", "host": ["{{base_url}}"], "path": ["metrics", "2026-06-17T10"] }
+      }
+    },
+    {
+      "name": "Reports - listar",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{base_url}}/reports?page=1&page_size=20",
+          "host": ["{{base_url}}"],
+          "path": ["reports"],
+          "query": [
+            { "key": "page", "value": "1" },
+            { "key": "page_size", "value": "20" },
+            { "key": "window_from", "value": "2026-06-17T00", "disabled": true },
+            { "key": "window_to", "value": "2026-06-17T23", "disabled": true }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Reports - generar bajo demanda",
+      "request": {
+        "method": "POST",
+        "url": { "raw": "{{base_url}}/reports/generate/2026-06-17T10", "host": ["{{base_url}}"], "path": ["reports", "generate", "2026-06-17T10"] }
+      }
+    }
+  ]
+}

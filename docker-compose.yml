@@ -1,0 +1,133 @@
+# ===========================================================================
+#  Plataforma de eventos sísmicos en tiempo real
+#  Levanta toda la solución con:  docker compose up --build
+#  Servicios: MongoDB · API REST · Ingesta · Airflow (+ Postgres de metadatos)
+# ===========================================================================
+
+x-app-env: &app-env
+  MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:-seismic}
+  MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:-seismic_secret_change_me}
+  MONGO_HOST: mongodb
+  MONGO_PORT: "27017"
+  MONGO_DB: ${MONGO_DB:-seismic}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  LOG_FORMAT: ${LOG_FORMAT:-json}
+  USGS_FEED_URL: ${USGS_FEED_URL:-https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_hour.geojson}
+  INGESTION_INTERVAL_SECONDS: ${INGESTION_INTERVAL_SECONDS:-180}
+  CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS:-30}
+
+services:
+  # ----------------------------- MongoDB --------------------------------
+  mongodb:
+    image: mongo:7
+    container_name: seismic-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:-seismic}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:-seismic_secret_change_me}
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [seismic-net]
+
+  # ----------------------------- API REST -------------------------------
+  api:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    container_name: seismic-api
+    restart: unless-stopped
+    environment:
+      <<: *app-env
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    command: ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    networks: [seismic-net]
+
+  # --------------------------- Servicio ingesta -------------------------
+  ingestion:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    container_name: seismic-ingestion
+    restart: unless-stopped
+    environment:
+      <<: *app-env
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    command: ["python", "-m", "src.ingestion_main"]
+    networks: [seismic-net]
+
+  # --------------------- Postgres (metadatos Airflow) -------------------
+  airflow-db:
+    image: postgres:16-alpine
+    container_name: seismic-airflow-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - airflow-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [seismic-net]
+
+  # ------------------------------- Airflow ------------------------------
+  airflow:
+    image: apache/airflow:2.10.4-python3.12
+    container_name: seismic-airflow
+    restart: unless-stopped
+    depends_on:
+      airflow-db:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+      AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
+      PYTHONPATH: /opt/airflow
+      _PIP_ADDITIONAL_REQUIREMENTS: "pymongo==4.9.2 pydantic==2.10.4 pydantic-settings==2.7.0"
+      # Configuración de acceso a MongoDB para el DAG
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:-seismic}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:-seismic_secret_change_me}
+      MONGO_HOST: mongodb
+      MONGO_PORT: "27017"
+      MONGO_DB: ${MONGO_DB:-seismic}
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./src:/opt/airflow/src
+      - airflow-logs:/opt/airflow/logs
+    command: >
+      bash -c "airflow db migrate &&
+      airflow users create --username admin --password admin --firstname Admin
+      --lastname User --role Admin --email admin@example.com || true &&
+      (airflow scheduler &) && airflow webserver"
+    networks: [seismic-net]
+
+volumes:
+  mongo-data:
+  airflow-db-data:
+  airflow-logs:
+
+networks:
+  seismic-net:
+    driver: bridge

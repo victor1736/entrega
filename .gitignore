@@ -1,0 +1,20 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.venv-demo/
+.venv-test/
+venv/
+env/
+.env
+.pytest_cache/
+.mypy_cache/
+.DS_Store
+logs/
+airflow/logs/
+airflow/plugins/
+mongo-data/
+*.log
+
+# Enunciado de la prueba (no forma parte del código entregable)
+*.pdf

@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Seismic · Monitor de Eventos Sísmicos</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <!-- ===================== NAVBAR ===================== -->
+  <nav class="nav">
+    <div class="nav-inner">
+      <div class="nav-left">
+        <a class="logo" href="/">
+          <span class="logo-mark">S</span>
+        </a>
+        <div class="search">
+          <svg viewBox="0 0 24 24" class="ico"><path d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 5 1.5-1.5-5-5zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14z"/></svg>
+          <input id="searchInput" type="text" placeholder="Buscar por ubicación…" />
+        </div>
+      </div>
+      <div class="nav-right">
+        <a class="nav-item active" data-view="feed"><span class="ni-ico">🏠</span><span>Inicio</span></a>
+        <a class="nav-item" href="#metrics"><span class="ni-ico">📊</span><span>Métricas</span></a>
+        <a class="nav-item" href="#reports"><span class="ni-ico">🗞️</span><span>Reportes</span></a>
+        <div class="nav-status">
+          <span class="dot" id="statusDot"></span>
+          <span id="statusText">…</span>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ===================== LAYOUT 3 COLUMNAS ===================== -->
+  <main class="layout">
+    <!-- ---------- COLUMNA IZQUIERDA ---------- -->
+    <aside class="col-left">
+      <section class="card profile">
+        <div class="profile-cover"></div>
+        <div class="profile-body">
+          <div class="profile-avatar">🌎</div>
+          <h2>Seismic Monitor</h2>
+          <p class="muted">Eventos sísmicos en tiempo real · USGS</p>
+        </div>
+        <div class="profile-stats">
+          <div class="pstat">
+            <span>Eventos totales</span><b id="kpiTotal">—</b>
+          </div>
+          <div class="pstat">
+            <span>Magnitud promedio</span><b id="kpiAvg">—</b>
+          </div>
+          <div class="pstat">
+            <span>Magnitud máxima</span><b id="kpiMax">—</b>
+          </div>
+          <div class="pstat">
+            <span>Ventanas horarias</span><b id="kpiWindows">—</b>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" id="metrics">
+        <h3 class="card-title">Distribución por magnitud</h3>
+        <canvas id="distChart" height="180"></canvas>
+      </section>
+    </aside>
+
+    <!-- ---------- COLUMNA CENTRAL (FEED) ---------- -->
+    <section class="col-center">
+      <div class="card composer">
+        <div class="composer-top">
+          <div class="mini-avatar">📡</div>
+          <div class="composer-title">
+            <strong>Actividad sísmica reciente</strong>
+            <span class="muted" id="feedMeta">Actualización automática cada 30 s</span>
+          </div>
+        </div>
+        <div class="composer-filters">
+          <label>Magnitud mínima
+            <input type="number" id="minMag" step="0.1" placeholder="ej. 2.5" />
+          </label>
+          <label>Ordenar por
+            <select id="sortBy">
+              <option value="event_time">Más recientes</option>
+              <option value="magnitude">Mayor magnitud</option>
+            </select>
+          </label>
+          <button id="applyFilter">Aplicar</button>
+        </div>
+      </div>
+
+      <div id="feed" class="feed">
+        <div class="card feed-empty">Cargando eventos…</div>
+      </div>
+
+      <button id="loadMore" class="load-more" style="display:none">Cargar más</button>
+    </section>
+
+    <!-- ---------- COLUMNA DERECHA ---------- -->
+    <aside class="col-right">
+      <section class="card news" id="reports">
+        <div class="news-head">
+          <h3 class="card-title">Reportes horarios</h3>
+          <span class="badge">Airflow</span>
+        </div>
+        <div id="reportsList">
+          <p class="muted small" style="padding:0 18px 14px">Cargando reportes…</p>
+        </div>
+      </section>
+
+      <section class="card">
+        <h3 class="card-title">Sismos por hora</h3>
+        <canvas id="hourlyChart" height="160"></canvas>
+      </section>
+
+      <div class="foot-links">
+        <span>Fuente: USGS Earthquake Program</span>
+        <span>· FastAPI · MongoDB · Airflow</span>
+      </div>
+    </aside>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
