@@ -60,7 +60,9 @@ Componentes desacoplados:
 
 ## Requisitos previos
 
-- Docker y Docker Compose v2 (`docker compose version`).
+- **Opción recomendada (todo en uno):** Docker y Docker Compose v2 (`docker compose version`).
+- **Opción sin Docker:** Python 3.11+ y una MongoDB accesible (ver
+  [Ejecución local sin Docker](#ejecución-local-sin-docker-servidor-de-desarrollo)).
 - Puertos libres: `8000` (API), `8080` (Airflow), `27017` (MongoDB).
 
 ## Puesta en marcha
@@ -93,6 +95,110 @@ Para detener y limpiar:
 docker compose down          # detiene
 docker compose down -v        # detiene y elimina volúmenes (datos)
 ```
+
+## Ejecución local sin Docker (servidor de desarrollo)
+
+Si prefieres levantar la API y la ingesta **directamente con Python** (por
+ejemplo para desarrollo o si no tienes Docker), sigue estos pasos. Necesitas
+**Python 3.11+** y una **MongoDB** accesible.
+
+### 1. Tener una MongoDB corriendo
+
+Elige una opción y anota la URI de conexión:
+
+- **MongoDB local** (instalada como servicio) → `mongodb://localhost:27017`
+- **MongoDB con Docker** (si tienes Docker suelto):
+  ```bash
+  docker run -d --name mongo -p 27017:27017 mongo:7
+  ```
+- **MongoDB Atlas** (gratis en la nube) → usa la URI `mongodb+srv://...` que te da Atlas.
+
+### 2. Crear el entorno virtual e instalar dependencias
+
+**Windows (PowerShell):**
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+**Linux / macOS (bash):**
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+### 3. Configurar las variables de entorno
+
+Crea un archivo `.env` en la raíz (a partir de `.env.example`) y ajusta la
+conexión a **tu** MongoDB. Para una MongoDB local sin usuario/contraseña:
+
+```env
+MONGO_URI=mongodb://localhost:27017
+MONGO_DB=seismic
+INGESTION_INTERVAL_SECONDS=180
+LOG_FORMAT=console
+```
+
+> `MONGO_URI` tiene prioridad sobre `MONGO_HOST`/`MONGO_PORT`. Para Atlas, pega
+> ahí la cadena `mongodb+srv://usuario:clave@cluster.../`.
+
+### 4. Levantar la API (dashboard + endpoints)
+
+En una terminal (con el entorno virtual activado y en la raíz del proyecto):
+
+```bash
+uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+Luego abre en el navegador:
+
+- **Dashboard** → <http://localhost:8000>
+- **Swagger (docs interactivas)** → <http://localhost:8000/docs>
+- **Health** → <http://localhost:8000/health>
+
+### 5. Levantar el servicio de ingesta (en otra terminal)
+
+Para que empiecen a entrar datos reales de USGS cada 3 minutos, abre **otra
+terminal**, activa de nuevo el entorno virtual y ejecuta:
+
+```bash
+python -m src.ingestion_main
+```
+
+Verás en los logs cada ciclo de ingesta (`Ingesta completada ... new=...`).
+Tras el primer ciclo, recarga el dashboard y aparecerán los eventos, las
+métricas y los reportes.
+
+> **Nota rápida:** también puedes generar un reporte al instante sin esperar a
+> Airflow con `POST /reports/generate/{window}`, por ejemplo desde Swagger o:
+> ```bash
+> curl -X POST "http://localhost:8000/reports/generate/2026-06-17T10"
+> ```
+
+### 6. (Opcional) Airflow en local
+
+Airflow es más cómodo vía Docker (ya incluido en `docker compose`). Si aun así
+lo quieres local:
+
+```bash
+pip install "apache-airflow==2.10.4"
+export AIRFLOW_HOME="$(pwd)/airflow"        # PowerShell: $env:AIRFLOW_HOME = "$PWD\airflow"
+export PYTHONPATH="$(pwd)"                    # para que el DAG encuentre el paquete src
+airflow standalone                            # inicia scheduler + webserver en :8080
+```
+
+El DAG `hourly_seismic_report` aparecerá en <http://localhost:8080>.
+
+### Resumen de comandos
+
+| Acción | Comando |
+|--------|---------|
+| Instalar dependencias | `pip install -r requirements.txt` |
+| Arrancar la API + dashboard | `uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload` |
+| Arrancar la ingesta | `python -m src.ingestion_main` |
+| Generar un reporte ya | `curl -X POST http://localhost:8000/reports/generate/<YYYY-MM-DDTHH>` |
 
 ## Servicios y puertos
 
